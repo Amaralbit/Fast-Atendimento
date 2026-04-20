@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  patient
+  doctor
+}
+
+enum AppointmentStatus {
+  scheduled
+  confirmed
+  cancelled
+  completed
+}
+
+enum CreatedBy {
+  patient
+  ai
+  doctor
+}
+
+enum MediaType {
+  image
+  video
+}
+
+enum ThemeMode {
+  light
+  dark
+}
+
+enum BlockReason {
+  manual
+  appointment
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         Role
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  doctor       Doctor?
+  patient      Patient?
+
+  @@map("users")
+}
+
+model Doctor {
+  id                      String                @id @default(uuid())
+  userId                  String                @unique @map("user_id")
+  name                    String
+  specialty               String?
+  crm                     String?
+  whatsappNumber          String?               @map("whatsapp_number")
+  profilePhotoUrl         String?               @map("profile_photo_url")
+  avgConsultationMinutes  Int                   @default(30) @map("avg_consultation_minutes")
+  createdAt               DateTime              @default(now()) @map("created_at")
+  updatedAt               DateTime              @updatedAt @map("updated_at")
+  user                    User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  settings                DoctorSettings?
+  availability            DoctorAvailability[]
+  blockedSlots            DoctorBlockedSlot[]
+  appointments            Appointment[]
+  services                Service[]
+  insurancePlans          InsurancePlan[]
+  landingPageSections     LandingPageSection[]
+  landingPageMedia        LandingPageMedia[]
+  chatSessions            ChatSession[]
+
+  @@map("doctors")
+}
+
+model DoctorSettings {
+  id             String    @id @default(uuid())
+  doctorId       String    @unique @map("doctor_id")
+  primaryColor   String    @default("#3B82F6") @map("primary_color")
+  secondaryColor String    @default("#06B6D4") @map("secondary_color")
+  themeMode      ThemeMode @default(light) @map("theme_mode")
+  plan           String    @default("free")
+  planExpiresAt  DateTime? @map("plan_expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  doctor         Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_settings")
+}
+
+model DoctorAvailability {
+  id         String   @id @default(uuid())
+  doctorId   String   @map("doctor_id")
+  dayOfWeek  Int      @map("day_of_week") // 0=Sun, 6=Sat
+  startTime  String   @map("start_time")  // "08:00"
+  endTime    String   @map("end_time")    // "18:00"
+  isActive   Boolean  @default(true) @map("is_active")
+  doctor     Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, dayOfWeek])
+  @@map("doctor_availability")
+}
+
+model DoctorBlockedSlot {
+  id        String      @id @default(uuid())
+  doctorId  String      @map("doctor_id")
+  date      DateTime    @db.Date
+  startTime String?     @map("start_time") // null = full day
+  endTime   String?     @map("end_time")   // null = full day
+  reason    BlockReason @default(manual)
+  createdAt DateTime    @default(now()) @map("created_at")
+  doctor    Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("doctor_blocked_slots")
+}
+
+model Patient {
+  id          String        @id @default(uuid())
+  userId      String        @unique @map("user_id")
+  name        String
+  phone       String?
+  dateOfBirth DateTime?     @map("date_of_birth") @db.Date
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  chatSessions ChatSession[]
+
+  @@map("patients")
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  doctorId        String            @map("doctor_id")
+  patientId       String            @map("patient_id")
+  scheduledAt     DateTime          @map("scheduled_at")
+  durationMinutes Int               @map("duration_minutes")
+  status          AppointmentStatus @default(scheduled)
+  notes           String?
+  createdBy       CreatedBy         @default(ai) @map("created_by")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  doctor          Doctor            @relation(fields: [doctorId], references: [id])
+  patient         Patient           @relation(fields: [patientId], references: [id])
+
+  @@map("appointments")
+}
+
+model Service {
+  id               String   @id @default(uuid())
+  doctorId         String   @map("doctor_id")
+  name             String
+  price            Decimal? @db.Decimal(10, 2)
+  acceptsInsurance Boolean  @default(false) @map("accepts_insurance")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  doctor           Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("services")
+}
+
+model InsurancePlan {
+  id        String   @id @default(uuid())
+  doctorId  String   @map("doctor_id")
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("insurance_plans")
+}
+
+model LandingPageSection {
+  id           String   @id @default(uuid())
+  doctorId     String   @map("doctor_id")
+  sectionKey   String   @map("section_key") // hero, about, gallery
+  title        String?
+  body         String?  @db.Text
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  doctor       Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, sectionKey])
+  @@map("landing_page_sections")
+}
+
+model LandingPageMedia {
+  id           String    @id @default(uuid())
+  doctorId     String    @map("doctor_id")
+  type         MediaType
+  url          String
+  caption      String?
+  displayOrder Int       @default(0) @map("display_order")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  doctor       Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@map("landing_page_media")
+}
+
+model ChatSession {
+  id           String        @id @default(uuid())
+  doctorId     String        @map("doctor_id")
+  patientId    String?       @map("patient_id")
+  sessionToken String        @unique @map("session_token")
+  startedAt    DateTime      @default(now()) @map("started_at")
+  endedAt      DateTime?     @map("ended_at")
+  doctor       Doctor        @relation(fields: [doctorId], references: [id])
+  patient      Patient?      @relation(fields: [patientId], references: [id])
+  messages     ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid())
+  sessionId String      @map("session_id")
+  role      MessageRole
+  content   String      @db.Text
+  createdAt DateTime    @default(now()) @map("created_at")
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
+}
